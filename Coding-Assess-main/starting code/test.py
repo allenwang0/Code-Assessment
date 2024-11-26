@@ -9,6 +9,12 @@ from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, classification_report
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import roc_curve, roc_auc_score
+from sklearn.metrics import precision_recall_curve
+from sklearn.calibration import calibration_curve
+import os
+
 
 # Part 1: API Pulling, Data Wrangling, and Visualizations
 
@@ -98,6 +104,7 @@ def calculate_spread(row, treasury_df):
     interpolated_yield = interpolate_treasury_yield(row["WAL"], treasury_df)
     return row["Yield"] - interpolated_yield
 
+
 # Apply spread calculation
 bonds_yields["Spread"] = bonds_yields.apply(
     lambda row: calculate_spread(row, treasury_df=treasury_curve), axis=1
@@ -110,24 +117,27 @@ print(bonds_yields)
 # Part 1.5: Visualizations
 
 # Spreads vs. Sector Boxplot
+
+# Spread vs Sector
 plt.figure(figsize=(12, 6))
 sns.boxplot(data=bonds_yields, x="Sector", y="Spread", palette="Set2")
-plt.title("Spread Distribution by Sector", fontsize=16)
+plt.title("Spread vs Sector", fontsize=16)
 plt.xlabel("Sector", fontsize=14)
 plt.ylabel("Spread (bps)", fontsize=14)
 plt.xticks(rotation=45)
 plt.grid(axis="y", linestyle="--", alpha=0.7)
 plt.show()
 
-# Spreads vs. WAL Scatterplot
+# Spread vs WAL
 plt.figure(figsize=(12, 6))
-sns.scatterplot(data=bonds_yields, x="WAL", y="Spread", hue="Sector", palette="Set1", s=100, edgecolor="k")
+sns.scatterplot(data=bonds_yields, x="WAL", y="Spread", hue="Sector", palette="Set1")
 plt.title("Spread vs Weighted Average Life (WAL)", fontsize=16)
 plt.xlabel("Weighted Average Life (Years)", fontsize=14)
 plt.ylabel("Spread (bps)", fontsize=14)
 plt.legend(title="Sector", fontsize=10, loc="upper right")
 plt.grid(axis="both", linestyle="--", alpha=0.7)
 plt.show()
+
 
 # Average Spread vs. Sector Barchart
 plt.figure(figsize=(12, 6))
@@ -156,6 +166,8 @@ plt.show()
 loan_data = pd.read_csv(loan_data_path)
 print(loan_data)
 
+# Part 2.1 Data Exploration
+
 # Search for missing values
 print(loan_data.info())
 print(loan_data.describe())
@@ -167,7 +179,8 @@ loan_data.drop_duplicates(inplace=True)
 if "Unnamed: 0" in loan_data.columns:
     loan_data = loan_data.drop(columns=["Unnamed: 0"])
 
-# EDA
+# Part 2.2 Feature engineering
+
 # Explore categorical features
 categorical_columns = loan_data.select_dtypes(include=["object", "category"]).columns
 for col in categorical_columns:
@@ -177,6 +190,9 @@ for col in categorical_columns:
 # Explore the target variable
 print("\nLoan Status Distribution:")
 print(loan_data["loan_status"].value_counts())
+
+print("Unique values in loan_status:", loan_data["loan_status"].unique())
+print("Data type of loan_status:", loan_data["loan_status"].dtype)
 
 # Handle binary categorical features
 loan_data["previous_loan_defaults_on_file"] = loan_data["previous_loan_defaults_on_file"].map({"Yes": 1, "No": 0})
@@ -199,6 +215,7 @@ numerical_columns = ["person_age", "person_income", "person_emp_exp", "loan_int_
 scaler = StandardScaler()
 loan_data[numerical_columns] = scaler.fit_transform(loan_data[numerical_columns])
 
+# Part 2.3 Model Training
 # Define target variable and features
 X = loan_data.drop(columns=["loan_status"])
 y = loan_data["loan_status"]
@@ -254,4 +271,109 @@ plt.ylabel("Feature")
 plt.show()
 
 
-#
+# Confusion matrix
+conf_matrix = confusion_matrix(y_test, y_pred_log)
+
+# Plot confusion matrix
+plt.figure(figsize=(8, 6))
+sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', xticklabels=["No Default", "Default"], yticklabels=["No Default", "Default"])
+plt.title("Confusion Matrix for Logistic Regression")
+plt.xlabel("Predicted")
+plt.ylabel("Actual")
+plt.show()
+
+# Predict probabilities for the positive class
+y_pred_prob = log_model.predict_proba(X_test)[:, 1]
+
+# Compute ROC curve and AUC
+fpr, tpr, thresholds = roc_curve(y_test, y_pred_prob)
+auc = roc_auc_score(y_test, y_pred_prob)
+
+# Plot ROC curve
+plt.figure(figsize=(10, 6))
+plt.plot(fpr, tpr, label=f"Logistic Regression (AUC = {auc:.2f})")
+plt.plot([0, 1], [0, 1], linestyle="--", color="gray")  # Diagonal line for random chance
+plt.title("ROC Curve for Logistic Regression")
+plt.xlabel("False Positive Rate")
+plt.ylabel("True Positive Rate")
+plt.legend()
+plt.grid()
+plt.show()
+
+# Compute precision-recall curve
+precision, recall, thresholds = precision_recall_curve(y_test, y_pred_prob)
+
+# Plot precision-recall curve
+plt.figure(figsize=(10, 6))
+plt.plot(recall, precision, label="Logistic Regression")
+plt.title("Precision-Recall Curve for Logistic Regression")
+plt.xlabel("Recall")
+plt.ylabel("Precision")
+plt.legend()
+plt.grid()
+plt.show()
+
+# Compute calibration curve
+prob_true, prob_pred = calibration_curve(y_test, y_pred_prob, n_bins=10)
+
+# Plot calibration curve
+plt.figure(figsize=(10, 6))
+plt.plot(prob_pred, prob_true, marker="o", label="Logistic Regression")
+plt.plot([0, 1], [0, 1], linestyle="--", color="gray")  # Perfectly calibrated line
+plt.title("Calibration Curve for Logistic Regression")
+plt.xlabel("Predicted Probability")
+plt.ylabel("Observed Probability")
+plt.legend()
+plt.grid()
+plt.show()
+
+
+# Extract feature importance (coefficients)
+coefficients = log_model.coef_[0]
+feature_importance = pd.DataFrame({
+    "Feature": X_train.columns,
+    "Coefficient": coefficients
+}).sort_values(by="Coefficient", ascending=False)
+
+# Plot feature importance
+plt.figure(figsize=(12, 6))
+sns.barplot(x="Coefficient", y="Feature", data=feature_importance, palette="coolwarm")
+plt.title("Feature Importance from Logistic Regression")
+plt.xlabel("Coefficient")
+plt.ylabel("Feature")
+plt.show()
+
+metrics = {
+    "Accuracy": accuracy_score,
+    "Precision": lambda y, pred: precision_score(y, pred, pos_label=1),
+    "Recall": lambda y, pred: recall_score(y, pred, pos_label=1),
+    "F1 Score": lambda y, pred: f1_score(y, pred, pos_label=1)
+}
+
+# Part 2.4 Documentation
+
+'''
+Approach: Random forest
+Looking at the feature importance table, the most important features seem to be history of loan 
+defaults and loan interest rate, followed by personal income, loan percentage of income, and loan 
+to income ratio. These five features explain the majority of the variation in the random forest
+model. This aligns with what is expected - that someone's likelihood of default is dependent on their 
+financial situation and ancillary variables such as the purpose of the loan and the education level of the
+loaner have lower propensity to describe the likelihood that someone is to default
+
+Approach: logistic regression
+Analyzing the results of the logistic regression, the logistic regression performed nearly as well as the
+random forest, with low levels of false positives and false negatives (type I and II errors). The model
+classified correctly the majority of people. Overall the model seems to not be overfitted or underfitted.
+The large area under the curve of the ROC indicates a well-performing model. Since the model is 
+imbalanced in the sense that most people fulfilled their loan obligations, looking at the P-R curve
+we can see that the slow drop-off indicates a good balance between precision and recall. The shape of the
+calibration curve corroborate this perspective, with the closeness of the logistic regression outputs to the
+line indicating that the predictions align with the real-world results.
+
+Analyzing the feature importance graph provides an interesting lens into our analysis, as we can see the 
+outsize bar on the graph for previous loan defaults indicates a large effect on possibility of future default.
+One question that I have is why the bar is negative because intuition points towards a positive relationship
+between the two variables.
+'''
+
