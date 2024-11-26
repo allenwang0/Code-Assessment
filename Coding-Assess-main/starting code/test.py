@@ -13,8 +13,8 @@ from sklearn.metrics import confusion_matrix
 from sklearn.metrics import roc_curve, roc_auc_score
 from sklearn.metrics import precision_recall_curve
 from sklearn.calibration import calibration_curve
-import os
-
+from sklearn.tree import plot_tree
+from sklearn.inspection import PartialDependenceDisplay
 
 # Part 1: API Pulling, Data Wrangling, and Visualizations
 
@@ -134,7 +134,7 @@ sns.scatterplot(data=bonds_yields, x="WAL", y="Spread", hue="Sector", palette="S
 plt.title("Spread vs Weighted Average Life (WAL)", fontsize=16)
 plt.xlabel("Weighted Average Life (Years)", fontsize=14)
 plt.ylabel("Spread (bps)", fontsize=14)
-plt.legend(title="Sector", fontsize=10, loc="upper right")
+plt.legend(title="Sector", fontsize=10, loc="lower right")
 plt.grid(axis="both", linestyle="--", alpha=0.7)
 plt.show()
 
@@ -195,7 +195,7 @@ print("Unique values in loan_status:", loan_data["loan_status"].unique())
 print("Data type of loan_status:", loan_data["loan_status"].dtype)
 
 # Handle binary categorical features
-loan_data["previous_loan_defaults_on_file"] = loan_data["previous_loan_defaults_on_file"].map({"Yes": 1, "No": 0})
+loan_data["previous_loan_defaults_on_file"] = loan_data["previous_loan_defaults_on_file"].map({"Yes": 0, "No": 1})
 
 # One-hot encoding for categorical columns
 categorical_columns = ["person_gender", "person_education", "person_home_ownership", "loan_intent", "loan_type"]
@@ -269,6 +269,30 @@ plt.title("Feature Importance from Random Forest")
 plt.xlabel("Importance")
 plt.ylabel("Feature")
 plt.show()
+
+
+# Confusion Matrix for Random Forest
+conf_matrix_rf = confusion_matrix(y_test, y_pred_rf)
+
+plt.figure(figsize=(8, 6))
+sns.heatmap(conf_matrix_rf, annot=True, fmt='d', cmap='Blues', xticklabels=["No Default", "Default"], yticklabels=["No Default", "Default"])
+plt.title("Confusion Matrix for Random Forest", fontsize=16)
+plt.xlabel("Predicted", fontsize=14)
+plt.ylabel("Actual", fontsize=14)
+plt.show()
+
+# Visualize one tree from the Random Forest
+plt.figure(figsize=(20, 10))
+plot_tree(rf_model.estimators_[0], feature_names=X_train.columns, class_names=["No Default", "Default"], filled=True, rounded=True)
+plt.title("Decision Tree Visualization", fontsize=16)
+plt.show()
+
+# Partial Dependence Plot for top features
+features_to_plot = feature_importance["Feature"].head(3).values  # Top 3 features
+PartialDependenceDisplay.from_estimator(rf_model, X_test, features_to_plot, grid_resolution=50, kind="average")
+plt.suptitle("Partial Dependence Plots", fontsize=16)
+plt.show()
+
 
 
 # Confusion matrix
@@ -359,7 +383,15 @@ defaults and loan interest rate, followed by personal income, loan percentage of
 to income ratio. These five features explain the majority of the variation in the random forest
 model. This aligns with what is expected - that someone's likelihood of default is dependent on their 
 financial situation and ancillary variables such as the purpose of the loan and the education level of the
-loaner have lower propensity to describe the likelihood that someone is to default
+loaner have lower propensity to describe the likelihood that someone is to default.
+
+Reading the partial dependence plots we can see that the previous loan defaults variable has a monotonic
+linear relationship meaning that it has a very close correlation with likelihood of default. The loan 
+interest rate variable and personal income variables also show interesting partial dependence relations, 
+where the interest rate graph is quasi exponential meaning that each unit increase in interest rate
+causes a much higher likelihood of not meaning loan obligations and the opposite relationship with
+income where the lowest incomes had a huge likelihood that rapidly decreases until stabilizing at a
+certain level.
 
 Approach: logistic regression
 Analyzing the results of the logistic regression, the logistic regression performed nearly as well as the
@@ -374,6 +406,14 @@ line indicating that the predictions align with the real-world results.
 Analyzing the feature importance graph provides an interesting lens into our analysis, as we can see the 
 outsize bar on the graph for previous loan defaults indicates a large effect on possibility of future default.
 One question that I have is why the bar is negative because intuition points towards a positive relationship
-between the two variables.
+between the two variables but I encoded it as Yes = 1 and No = 0 in the way I assumed the loan default
+variable was encoded. At the end I changed the encoding to Yes = 0 and No = 1 because it made more sense given
+the modeling.
+
+Overall, the findings make sense with my intuition for loan defaults, with the key finding that previous loan
+defaults being the most important predictor for whether an individual is likely to default on their loan. This
+is because people try to avoid defaulting on loan the first time because it is complicated and messy, but if they
+default at least one time prior, then that means that they are likely to default again because they are stuck in
+their ways and the lenders already do not trust them.
 '''
 
