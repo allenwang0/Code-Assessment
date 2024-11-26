@@ -215,6 +215,21 @@ numerical_columns = ["person_age", "person_income", "person_emp_exp", "loan_int_
 scaler = StandardScaler()
 loan_data[numerical_columns] = scaler.fit_transform(loan_data[numerical_columns])
 
+# Select only numeric columns for correlation calculation
+numeric_data = loan_data.select_dtypes(include=["number"])
+
+# Calculate the correlation matrix
+correlation_matrix = numeric_data.corr()
+
+# Plot the heatmap
+plt.figure(figsize=(14, 10))
+sns.heatmap(correlation_matrix, annot=True, fmt=".2f", cmap="coolwarm", cbar=True, square=True, linewidths=0.5)
+plt.title("Feature Correlation Heatmap", fontsize=16)
+plt.xticks(rotation=45, ha="right", fontsize=10)
+plt.yticks(fontsize=10)
+plt.tight_layout()
+plt.show()
+
 # Part 2.3 Model Training
 # Define target variable and features
 X = loan_data.drop(columns=["loan_status"])
@@ -413,7 +428,7 @@ the modeling.
 Overall, the findings make sense with my intuition for loan defaults, with the key finding that previous loan
 defaults being the most important predictor for whether an individual is likely to default on their loan. This
 is because people try to avoid defaulting on loan the first time because it is complicated and messy, but if they
-default at least one time prior, then that means that they are likely to default again because they are stuck in
-their ways and the lenders already do not trust them.
+default at least one time prior, then that means that they are likely to default again because they are trapped
+in a cycle with their debt obligations.
 '''
 
