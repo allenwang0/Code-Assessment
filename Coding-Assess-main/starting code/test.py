@@ -3,7 +3,12 @@ import pandas as pd
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
-from datetime import datetime
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, classification_report
 
 # Part 1: API Pulling, Data Wrangling, and Visualizations
 
@@ -82,9 +87,6 @@ bonds_yields = pd.read_excel(bonds_yields_path)
 
 bonds_yields.rename(columns={"WAL (years)": "WAL", "Yield (%)": "Yield"}, inplace=True)
 
-# Load CSV file (loan data)
-loan_data = pd.read_csv(loan_data_path)
-
 
 def interpolate_treasury_yield(wal, treasury_df):
     maturities = treasury_df["Maturity"].values
@@ -146,3 +148,110 @@ plt.ylabel("Spread (bps)", fontsize=14)
 plt.xticks(rotation=45)
 plt.grid(axis="y", linestyle="--", alpha=0.7)
 plt.show()
+
+
+# Part 2: Loan Default Prediction Task
+
+# Load CSV file (loan data)
+loan_data = pd.read_csv(loan_data_path)
+print(loan_data)
+
+# Search for missing values
+print(loan_data.info())
+print(loan_data.describe())
+print(loan_data.isnull().sum())
+
+# Drop duplicates
+loan_data.drop_duplicates(inplace=True)
+
+if "Unnamed: 0" in loan_data.columns:
+    loan_data = loan_data.drop(columns=["Unnamed: 0"])
+
+# EDA
+# Explore categorical features
+categorical_columns = loan_data.select_dtypes(include=["object", "category"]).columns
+for col in categorical_columns:
+    print(f"\nValue counts for {col}:")
+    print(loan_data[col].value_counts())
+
+# Explore the target variable
+print("\nLoan Status Distribution:")
+print(loan_data["loan_status"].value_counts())
+
+# Handle binary categorical features
+loan_data["previous_loan_defaults_on_file"] = loan_data["previous_loan_defaults_on_file"].map({"Yes": 1, "No": 0})
+
+# One-hot encoding for categorical columns
+categorical_columns = ["person_gender", "person_education", "person_home_ownership", "loan_intent", "loan_type"]
+encoder = OneHotEncoder(drop="first", sparse_output=False)
+encoded_features = encoder.fit_transform(loan_data[categorical_columns])
+encoded_columns = encoder.get_feature_names_out(categorical_columns)
+encoded_df = pd.DataFrame(encoded_features, columns=encoded_columns, index=loan_data.index)
+loan_data = loan_data.drop(columns=categorical_columns)
+loan_data = pd.concat([loan_data, encoded_df], axis=1)
+
+numerical_columns = ["person_age", "person_income", "person_emp_exp", "loan_int_rate",
+                     "loan_percent_income", "cb_person_cred_hist_length",
+                     "credit_score", "regional_unemployment_rate",
+                     "borrower_risk_score", "loan_to_income_ratio"]
+
+# Scale numerical features
+scaler = StandardScaler()
+loan_data[numerical_columns] = scaler.fit_transform(loan_data[numerical_columns])
+
+# Define target variable and features
+X = loan_data.drop(columns=["loan_status"])
+y = loan_data["loan_status"]
+
+# Train-test split
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+
+# Train logistic regression model
+log_model = LogisticRegression(random_state=42)
+log_model.fit(X_train, y_train)
+
+# Predictions
+y_pred_log = log_model.predict(X_test)
+
+# Train random forest model
+rf_model = RandomForestClassifier(random_state=42)
+rf_model.fit(X_train, y_train)
+
+# Predictions
+y_pred_rf = rf_model.predict(X_test)
+
+
+# Evaluate Logistic Regression
+print("Logistic Regression Performance:")
+print(f"Accuracy: {accuracy_score(y_test, y_pred_log):.2f}")
+print(f"Precision: {precision_score(y_test, y_pred_log, pos_label=1):.2f}")
+print(f"Recall: {recall_score(y_test, y_pred_log, pos_label=1):.2f}")
+print(f"F1 Score: {f1_score(y_test, y_pred_log, pos_label=1):.2f}")
+
+# Evaluate Random Forest
+print("\nRandom Forest Performance:")
+print(f"Accuracy: {accuracy_score(y_test, y_pred_rf):.2f}")
+print(f"Precision: {precision_score(y_test, y_pred_rf, pos_label=1):.2f}")
+print(f"Recall: {recall_score(y_test, y_pred_rf, pos_label=1):.2f}")
+print(f"F1 Score: {f1_score(y_test, y_pred_rf, pos_label=1):.2f}")
+
+# Classification report
+print("\nClassification Report (Random Forest):")
+print(classification_report(y_test, y_pred_rf))
+
+# Random forest feature importance
+feature_importance = pd.DataFrame({
+    "Feature": X_train.columns,
+    "Importance": rf_model.feature_importances_
+}).sort_values(by="Importance", ascending=False)
+
+
+plt.figure(figsize=(12, 6))
+sns.barplot(x="Importance", y="Feature", data=feature_importance, palette="viridis")
+plt.title("Feature Importance from Random Forest")
+plt.xlabel("Importance")
+plt.ylabel("Feature")
+plt.show()
+
+
+#
